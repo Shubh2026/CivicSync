@@ -1,67 +1,88 @@
-import { createClient } from "@/lib/supabase/server";
+// GET  /api/volunteer/profile — get own profile
+// PUT  /api/volunteer/profile — upsert profile fields
+
+import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/auth-middleware";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  if (error) {
-    return NextResponse.json({
-      data: {
-        id: user.id,
-        email: user.email,
-        full_name: user.user_metadata?.full_name || "",
-        avatar_url: user.user_metadata?.avatar_url || null,
-        role: "volunteer",
-        bio: "",
-        location: "Amritsar, Punjab",
-        skills: [],
-        availability: [],
-        causes: [],
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { id: auth.userId },
+      select: {
+        id: true, fullName: true, email: true, avatarUrl: true, role: true,
+        bio: true, location: true, phone: true, skills: true,
+        availability: true, causes: true, createdAt: true,
+        _count: { select: { volunteerAcceptances: true } },
       },
-      isMock: true,
     });
-  }
 
-  return NextResponse.json({ data });
+    if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+
+    return NextResponse.json({
+      id:           profile.id,
+      full_name:    profile.fullName,
+      email:        profile.email,
+      avatar_url:   profile.avatarUrl,
+      role:         profile.role,
+      bio:          profile.bio,
+      location:     profile.location,
+      phone:        profile.phone,
+      skills:       profile.skills,
+      availability: profile.availability,
+      causes:       profile.causes,
+      created_at:   profile.createdAt.toISOString(),
+      total_engagements: profile._count.volunteerAcceptances,
+    });
+
+  } catch (err) {
+    console.error("[GET /api/volunteer/profile]", err);
+    return NextResponse.json({ error: "Failed to load profile" }, { status: 500 });
+  }
 }
 
 export async function PUT(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => null);
+  if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 
-  const body = await request.json();
-  const { full_name, bio, location, skills, availability, causes, phone } = body;
+  const { fullName, bio, location, phone, skills, availability, causes, avatarUrl } = body;
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({
-      full_name,
-      bio,
-      location,
-      skills,
-      availability,
-      causes,
-      phone,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", user.id)
-    .select()
-    .single();
+  try {
+    const updated = await prisma.profile.upsert({
+      where: { id: auth.userId },
+      create: {
+        id:           auth.userId,
+        email:        auth.user.email,
+        fullName,
+        bio,
+        location,
+        phone,
+        skills:       Array.isArray(skills)       ? skills       : [],
+        availability: Array.isArray(availability) ? availability : [],
+        causes:       Array.isArray(causes)       ? causes       : [],
+        avatarUrl,
+      },
+      update: {
+        ...(fullName     !== undefined && { fullName }),
+        ...(bio          !== undefined && { bio }),
+        ...(location     !== undefined && { location }),
+        ...(phone        !== undefined && { phone }),
+        ...(skills       !== undefined && { skills: Array.isArray(skills) ? skills : [] }),
+        ...(availability !== undefined && { availability: Array.isArray(availability) ? availability : [] }),
+        ...(causes       !== undefined && { causes: Array.isArray(causes) ? causes : [] }),
+        ...(avatarUrl    !== undefined && { avatarUrl }),
+      },
+    });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, id: updated.id });
+  } catch (err) {
+    console.error("[PUT /api/volunteer/profile]", err);
+    return NextResponse.json({ error: "Update failed" }, { status: 500 });
   }
-
-  return NextResponse.json({ data });
 }

@@ -1,35 +1,74 @@
-import { createClient } from "@/lib/supabase/server";
+// GET /api/ngo/requests/[id]/volunteers — volunteers on a specific request
+
+import { prisma } from "@/lib/prisma";
+import { requireNGORole } from "@/lib/auth-middleware";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireNGORole();
+  if (auth instanceof NextResponse) return auth;
 
-  const { id } = await params;
+  const { id: opportunityId } = await params;
 
-  const { data, error } = await supabase
-    .from("volunteer_assignments")
-    .select(`
-      *,
-      volunteer:profiles(id, full_name, avatar_url, email, skills, location, bio)
-    `)
-    .eq("opportunity_id", id)
-    .order("accepted_at", { ascending: false });
+  try {
+    // Guard: opportunity must belong to this NGO
+    const opportunity = await prisma.opportunity.findFirst({
+      where: { id: opportunityId, ngoId: auth.userId },
+      select: { id: true, title: true, volunteersNeeded: true, volunteersAccepted: true },
+    });
 
-  if (error) return NextResponse.json({ data: getMockVolunteers(), isMock: true });
-  if (!data?.length) return NextResponse.json({ data: getMockVolunteers(), isMock: true });
-  return NextResponse.json({ data });
-}
+    if (!opportunity) {
+      return NextResponse.json({ error: "Opportunity not found" }, { status: 404 });
+    }
 
-function getMockVolunteers() {
-  return [
-    { id: "a1", volunteer_id: "v1", opportunity_id: "req-1", status: "accepted", hours_contributed: 0, accepted_at: "2026-04-22T10:00:00Z", volunteer: { id: "v1", full_name: "Priya Sharma", email: "priya@example.com", avatar_url: null, skills: ["communication", "teaching"], location: "Amritsar, Punjab", bio: "Passionate about community development." } },
-    { id: "a2", volunteer_id: "v2", opportunity_id: "req-1", status: "ongoing",  hours_contributed: 4, accepted_at: "2026-04-20T10:00:00Z", volunteer: { id: "v2", full_name: "Arjun Singh", email: "arjun@example.com", avatar_url: null, skills: ["physical activity", "first aid"], location: "Amritsar, Punjab", bio: "Ex-NCC cadet, love serving." } },
-    { id: "a3", volunteer_id: "v3", opportunity_id: "req-1", status: "completed", hours_contributed: 8, accepted_at: "2026-04-15T10:00:00Z", volunteer: { id: "v3", full_name: "Kavya Mehta", email: "kavya@example.com", avatar_url: null, skills: ["communication", "empathy"], location: "Ludhiana, Punjab", bio: "Social worker with 3 years exp." } },
-    { id: "a4", volunteer_id: "v4", opportunity_id: "req-1", status: "accepted", hours_contributed: 0, accepted_at: "2026-04-25T10:00:00Z", volunteer: { id: "v4", full_name: "Rohan Gupta", email: "rohan@example.com", avatar_url: null, skills: ["technology", "design"], location: "Chandigarh", bio: "CS student looking to give back." } },
-  ];
+    const acceptances = await prisma.volunteerAcceptance.findMany({
+      where: { opportunityId },
+      orderBy: { acceptedAt: "desc" },
+      include: {
+        volunteer: {
+          select: {
+            id: true, fullName: true, email: true, avatarUrl: true,
+            location: true, bio: true, skills: true, phone: true,
+          },
+        },
+      },
+    });
+
+    const data = acceptances.map((a) => ({
+      id:               a.id,
+      status:           a.status,
+      hours_contributed: Number(a.hoursContributed),
+      feedback:         a.feedback,
+      rating:           a.rating,
+      accepted_at:      a.acceptedAt.toISOString(),
+      completed_at:     a.completedAt?.toISOString() ?? null,
+      volunteer: {
+        id:        a.volunteer.id,
+        full_name: a.volunteer.fullName,
+        email:     a.volunteer.email,
+        avatar_url: a.volunteer.avatarUrl,
+        location:  a.volunteer.location,
+        bio:       a.volunteer.bio,
+        skills:    a.volunteer.skills,
+        phone:     a.volunteer.phone,
+      },
+    }));
+
+    return NextResponse.json({
+      data,
+      opportunity: {
+        id:                 opportunity.id,
+        title:              opportunity.title,
+        volunteers_needed:  opportunity.volunteersNeeded,
+        volunteers_accepted: opportunity.volunteersAccepted,
+      },
+    });
+
+  } catch (err) {
+    console.error("[GET /api/ngo/requests/[id]/volunteers]", err);
+    return NextResponse.json({ data: [], isMock: true });
+  }
 }

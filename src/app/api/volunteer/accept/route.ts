@@ -1,47 +1,103 @@
-import { createClient } from "@/lib/supabase/server";
+// POST /api/volunteer/accept  — volunteer accepts a request
+// DELETE /api/volunteer/accept — volunteer withdraws
+
+import { prisma } from "@/lib/prisma";
+import { requireVolunteerRole } from "@/lib/auth-middleware";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = await requireVolunteerRole();
+  if (auth instanceof NextResponse) return auth;
 
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { opportunityId } = await request.json();
+  const body = await request.json().catch(() => ({}));
+  const { opportunityId } = body;
 
   if (!opportunityId) {
     return NextResponse.json({ error: "opportunityId is required" }, { status: 400 });
   }
 
-  // Check if already accepted
-  const { data: existing } = await supabase
-    .from("volunteer_assignments")
-    .select("id")
-    .eq("volunteer_id", user.id)
-    .eq("opportunity_id", opportunityId)
-    .single();
+  try {
+    // ── Guard: opportunity must exist and be active ────────
+    const opportunity = await prisma.opportunity.findUnique({
+      where: { id: opportunityId },
+      select: { id: true, status: true, volunteersNeeded: true, volunteersAccepted: true },
+    });
 
-  if (existing) {
-    return NextResponse.json({ error: "Already accepted this opportunity" }, { status: 409 });
-  }
-
-  const { data, error } = await supabase
-    .from("volunteer_assignments")
-    .insert({
-      volunteer_id: user.id,
-      opportunity_id: opportunityId,
-      status: "accepted",
-    })
-    .select()
-    .single();
-
-  if (error) {
-    // If table doesn't exist, return success for demo
-    if (error.code === "42P01") {
-      return NextResponse.json({ data: { id: "mock-assign", status: "accepted" }, isMock: true });
+    if (!opportunity) {
+      return NextResponse.json({ error: "Opportunity not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (opportunity.status !== "active") {
+      return NextResponse.json({ error: "Opportunity is no longer accepting volunteers" }, { status: 409 });
+    }
+    if (opportunity.volunteersAccepted >= opportunity.volunteersNeeded) {
+      return NextResponse.json({ error: "Opportunity is already full" }, { status: 409 });
+    }
+
+    // ── Create acceptance + increment counter (transaction) ─
+    const [acceptance] = await prisma.$transaction([
+      prisma.volunteerAcceptance.create({
+        data: {
+          volunteerId:  auth.userId,
+          opportunityId,
+          status: "accepted",
+        },
+        include: {
+          opportunity: { select: { title: true, category: true, location: true } },
+        },
+      }),
+      prisma.opportunity.update({
+        where: { id: opportunityId },
+        data: { volunteersAccepted: { increment: 1 } },
+      }),
+    ]);
+
+    return NextResponse.json({ data: acceptance }, { status: 201 });
+
+  } catch (err: unknown) {
+    // Unique constraint: already accepted
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: string }).code === "P2002"
+    ) {
+      return NextResponse.json({ error: "Already accepted this opportunity" }, { status: 409 });
+    }
+    console.error("[POST /api/volunteer/accept]", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireVolunteerRole();
+  if (auth instanceof NextResponse) return auth;
+
+  const { searchParams } = new URL(request.url);
+  const opportunityId = searchParams.get("opportunityId");
+
+  if (!opportunityId) {
+    return NextResponse.json({ error: "opportunityId is required" }, { status: 400 });
   }
 
-  return NextResponse.json({ data });
+  try {
+    await prisma.$transaction([
+      prisma.volunteerAcceptance.delete({
+        where: {
+          volunteerId_opportunityId: {
+            volunteerId:  auth.userId,
+            opportunityId,
+          },
+        },
+      }),
+      prisma.opportunity.update({
+        where: { id: opportunityId },
+        data: { volunteersAccepted: { decrement: 1 } },
+      }),
+    ]);
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[DELETE /api/volunteer/accept]", err);
+    return NextResponse.json({ error: "Could not withdraw from opportunity" }, { status: 500 });
+  }
 }

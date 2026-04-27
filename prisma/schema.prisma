@@ -1,0 +1,120 @@
+// ============================================================
+// CivicSync Prisma Schema
+// Maps to existing Supabase PostgreSQL tables
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── User / Profile ────────────────────────────────────────────
+// Mirrors Supabase auth.users via profiles table
+model Profile {
+  id           String   @id @db.Uuid
+  email        String?
+  fullName     String?  @map("full_name")
+  avatarUrl    String?  @map("avatar_url")
+  role         String?  // 'volunteer' | 'ngo'
+  bio          String?
+  location     String?  @default("Amritsar, Punjab")
+  phone        String?
+  skills       String[] @default([])
+  availability String[] @default([])
+  causes       String[] @default([])
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  postedOpportunities  Opportunity[]         @relation("NGOOpportunities")
+  communityNeeds       CommunityNeed[]       @relation("NGOCommunityNeeds")
+  volunteerAcceptances VolunteerAcceptance[] @relation("VolunteerAcceptances")
+
+  @@map("profiles")
+}
+
+// ── CommunityNeed ─────────────────────────────────────────────
+// Uploaded community data — the "what needs help" layer
+model CommunityNeed {
+  id            String   @id @default(uuid()) @db.Uuid
+  ngoId         String?  @map("ngo_id") @db.Uuid
+  title         String
+  description   String
+  category      String
+  location      String
+  city          String?
+  state         String?
+  urgency       String   @default("medium")
+  beneficiaries Int?
+  imageUrls     String[] @default([]) @map("image_urls")
+  status        String   @default("active") // 'active' | 'addressed' | 'archived'
+  source        String   @default("manual") // 'manual' | 'csv'
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // FK: linked volunteer request (optional)
+  linkedOpportunityId String?      @map("linked_opportunity_id") @db.Uuid
+  linkedOpportunity   Opportunity? @relation("LinkedNeeds", fields: [linkedOpportunityId], references: [id])
+
+  // FK: the NGO who posted this
+  ngo Profile? @relation("NGOCommunityNeeds", fields: [ngoId], references: [id])
+
+  @@map("community_needs")
+}
+
+// ── VolunteerRequest / Opportunity ────────────────────────────
+// Specific volunteer opportunities posted by NGOs
+model Opportunity {
+  id                 String    @id @default(uuid()) @db.Uuid
+  ngoId              String?   @map("ngo_id") @db.Uuid
+  title              String
+  description        String
+  category           String
+  location           String
+  city               String?
+  state              String?
+  isRemote           Boolean   @default(false) @map("is_remote")
+  urgency            String    @default("medium")
+  requiredSkills     String[]  @default([]) @map("required_skills")
+  volunteersNeeded   Int       @default(1) @map("volunteers_needed")
+  volunteersAccepted Int       @default(0) @map("volunteers_accepted")
+  dateStart          DateTime? @map("date_start") @db.Date
+  dateEnd            DateTime? @map("date_end") @db.Date
+  hoursPerWeek       Decimal?  @map("hours_per_week") @db.Decimal(4, 1)
+  isOneTime          Boolean   @default(false) @map("is_one_time")
+  imageUrl           String?   @map("image_url")
+  status             String    @default("active") // 'draft' | 'active' | 'closed' | 'completed'
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  ngo          Profile?            @relation("NGOOpportunities", fields: [ngoId], references: [id])
+  acceptances  VolunteerAcceptance[] @relation("OpportunityAcceptances")
+  linkedNeeds  CommunityNeed[]     @relation("LinkedNeeds")
+
+  @@map("opportunities")
+}
+
+// ── VolunteerAcceptance ───────────────────────────────────────
+// Junction table: many volunteers ↔ many opportunities
+model VolunteerAcceptance {
+  id               String    @id @default(uuid()) @db.Uuid
+  volunteerId      String    @map("volunteer_id") @db.Uuid
+  opportunityId    String    @map("opportunity_id") @db.Uuid
+  status           String    @default("accepted") // 'accepted' | 'ongoing' | 'completed' | 'cancelled'
+  hoursContributed Decimal   @default(0) @map("hours_contributed") @db.Decimal(5, 1)
+  feedback         String?
+  rating           Int?
+  acceptedAt       DateTime  @default(now()) @map("accepted_at")
+  completedAt      DateTime? @map("completed_at")
+
+  // Relations
+  volunteer   Profile     @relation("VolunteerAcceptances", fields: [volunteerId], references: [id])
+  opportunity Opportunity @relation("OpportunityAcceptances", fields: [opportunityId], references: [id])
+
+  @@unique([volunteerId, opportunityId])
+  @@map("volunteer_assignments")
+}

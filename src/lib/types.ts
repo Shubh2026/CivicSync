@@ -123,6 +123,13 @@ export interface AssignmentWithVolunteer {
   accepted_at: string;
   completed_at?: string | null;
   volunteer: VolunteerProfile & { email?: string };
+  opportunity?: {
+    id: string;
+    title: string;
+    category: string;
+    location: string;
+    city?: string | null;
+  } | null;
 }
 
 export interface AnalyticsData {
