@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import type { VolunteerProfile } from "@/lib/types";
@@ -10,6 +10,8 @@ import PostRequestView from "./ngo/PostRequestView";
 import MyRequestsView from "./ngo/MyRequestsView";
 import VolunteersEngagedView from "./ngo/VolunteersEngagedView";
 import NGOAnalyticsView from "./ngo/AnalyticsView";
+import NotificationBell from "@/components/ui/NotificationBell";
+import { useTableRealtime } from "@/lib/useRealtime";
 
 type View = "home" | "upload" | "post" | "requests" | "volunteers" | "analytics";
 
@@ -31,7 +33,12 @@ export default function NGODashboardClient({ user, profile }: Props) {
   const [activeView, setActiveView] = useState<View>("home");
   const [signingOut, setSigningOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const supabase = createClient();
+
+  // Refresh volunteer/requests views when someone accepts a request
+  const triggerRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  useTableRealtime("volunteer_assignments", triggerRefresh, { event: "INSERT" });
 
   const displayName =
     profile.full_name || user.user_metadata?.full_name ||
@@ -160,6 +167,12 @@ export default function NGODashboardClient({ user, profile }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <NotificationBell
+              userId={user.id}
+              role="ngo"
+              onNavigate={(v) => setActiveView(v as View)}
+              accentColor="teal"
+            />
             <button
               onClick={() => setActiveView("post")}
               className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-teal-500 to-teal-700 text-white hover:from-teal-400 hover:to-teal-600 transition-all duration-200 hover:scale-105 shadow-lg"
@@ -182,8 +195,8 @@ export default function NGODashboardClient({ user, profile }: Props) {
           {activeView === "home"       && <NGOHomeView user={user} profile={profile} onNavigate={setActiveView} />}
           {activeView === "upload"     && <UploadDataView ngoId={user.id} />}
           {activeView === "post"       && <PostRequestView ngoId={user.id} onSuccess={() => setActiveView("requests")} />}
-          {activeView === "requests"   && <MyRequestsView ngoId={user.id} />}
-          {activeView === "volunteers" && <VolunteersEngagedView ngoId={user.id} />}
+          {activeView === "requests"   && <MyRequestsView key={refreshKey} ngoId={user.id} />}
+          {activeView === "volunteers" && <VolunteersEngagedView key={refreshKey} ngoId={user.id} />}
           {activeView === "analytics"  && <NGOAnalyticsView ngoId={user.id} />}
         </main>
       </div>

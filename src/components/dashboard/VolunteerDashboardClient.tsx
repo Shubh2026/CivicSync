@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import type { VolunteerProfile } from "@/lib/types";
@@ -8,6 +8,8 @@ import HomeView from "./volunteer/HomeView";
 import HistoryView from "./volunteer/HistoryView";
 import ProfileView from "./volunteer/ProfileView";
 import OpportunitiesView from "./volunteer/OpportunitiesView";
+import NotificationBell from "@/components/ui/NotificationBell";
+import { useTableRealtime } from "@/lib/useRealtime";
 
 type View = "home" | "opportunities" | "history" | "profile";
 
@@ -27,7 +29,12 @@ export default function VolunteerDashboardClient({ user, profile }: Props) {
   const [activeView, setActiveView] = useState<View>("home");
   const [signingOut, setSigningOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const supabase = createClient();
+
+  // Refresh home/opportunities when new opportunity is posted
+  const triggerRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  useTableRealtime("opportunities", triggerRefresh, { event: "INSERT" });
 
   const displayName =
     profile.full_name ||
@@ -195,6 +202,12 @@ export default function VolunteerDashboardClient({ user, profile }: Props) {
 
           {/* Right: quick actions */}
           <div className="flex items-center gap-3">
+            <NotificationBell
+              userId={user.id}
+              role="volunteer"
+              onNavigate={(v) => setActiveView(v as View)}
+              accentColor="emerald"
+            />
             <button
               onClick={() => setActiveView("opportunities")}
               className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-400 hover:to-teal-500 transition-all duration-200 hover:scale-105 shadow-lg"
@@ -215,10 +228,10 @@ export default function VolunteerDashboardClient({ user, profile }: Props) {
         {/* View content */}
         <main className="flex-1 overflow-auto">
           {activeView === "home" && (
-            <HomeView user={user} profile={profile} onNavigate={setActiveView} />
+            <HomeView key={refreshKey} user={user} profile={profile} onNavigate={setActiveView} />
           )}
           {activeView === "opportunities" && (
-            <OpportunitiesView userId={user.id} />
+            <OpportunitiesView key={refreshKey} userId={user.id} />
           )}
           {activeView === "history" && (
             <HistoryView userId={user.id} displayName={displayName} />

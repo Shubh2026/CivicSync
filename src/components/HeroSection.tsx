@@ -4,73 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import OvalCard from "@/components/OvalCard";
 
-const SidebarNav = () => (
-  <div className="hidden lg:flex flex-col items-center gap-6 fixed right-8 top-1/2 -translate-y-1/2 z-40">
-    {/* Vertical oval container */}
-    <div className="relative">
-      <svg
-        viewBox="0 0 60 280"
-        className="absolute inset-0 w-full h-full"
-        aria-hidden="true"
-      >
-        <defs>
-          <filter id="sidebar-glow">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <ellipse
-          cx="30"
-          cy="140"
-          rx="26"
-          ry="130"
-          fill="rgba(16,24,32,0.7)"
-          stroke="rgba(52,211,153,0.4)"
-          strokeWidth="1.5"
-          filter="url(#sidebar-glow)"
-        />
-        <ellipse
-          cx="30"
-          cy="140"
-          rx="22"
-          ry="126"
-          fill="none"
-          stroke="rgba(52,211,153,0.15)"
-          strokeWidth="1"
-          strokeDasharray="3 6"
-        />
-      </svg>
-      <div className="relative z-10 flex flex-col items-center gap-5 py-8 px-3 w-[60px] h-[280px]">
-        {[
-          { label: "Home", href: "/" },
-          { label: "About", href: "#about" },
-          { label: "Contact", href: "#contact" },
-          { label: "Sign In", href: "/login" },
-        ].map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className="group flex items-center justify-center w-full"
-          >
-            <span
-              className="text-white/50 hover:text-emerald-400 font-semibold text-[10px] tracking-widest transition-all duration-300 group-hover:scale-105"
-              style={{
-                writingMode: "vertical-rl",
-                textOrientation: "mixed",
-                transform: "rotate(180deg)",
-              }}
-            >
-              {item.label.toUpperCase()}
-            </span>
-          </Link>
-        ))}
-      </div>
-    </div>
-  </div>
-);
+
 
 const DeveloperCredit = () => (
   <div className="hidden xl:flex flex-col items-center gap-2 fixed left-6 top-1/2 -translate-y-1/2 z-40">
@@ -139,8 +73,6 @@ export default function HeroSection() {
         }}
       />
 
-      {/* Sidebar nav */}
-      <SidebarNav />
       {/* Developer credit */}
       <DeveloperCredit />
 
@@ -208,7 +140,7 @@ export default function HeroSection() {
           className="text-white/60 text-base md:text-lg max-w-2xl text-center mb-12 leading-relaxed animate-fade-in-up opacity-0 delay-300"
           style={{ animationFillMode: "forwards" }}
         >
-          Your community has real needs. We connect passionate volunteers with US-based NGOs,
+          Your community has real needs. We connect passionate volunteers with NGOs,
           social groups, and civic organizations — enabling impactful volunteering powered by
           transparent data and genuine human connection.
         </p>

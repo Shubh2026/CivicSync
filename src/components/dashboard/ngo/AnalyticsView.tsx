@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   AreaChart,
   Area,
@@ -15,8 +15,11 @@ import {
   Legend,
   BarChart,
   Bar,
+  RadialBarChart,
+  RadialBar,
 } from "recharts";
 import type { AnalyticsData } from "@/lib/types";
+import { useTableRealtime } from "@/lib/useRealtime";
 
 interface Props { ngoId: string }
 
@@ -76,13 +79,18 @@ export default function NGOAnalyticsView({ ngoId }: Props) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     fetch("/api/ngo/analytics")
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-refresh when a new volunteer accepts a request
+  useTableRealtime("volunteer_assignments", fetchData, { event: "INSERT" });
 
   const ngoId_ = ngoId;
 
@@ -139,33 +147,62 @@ export default function NGOAnalyticsView({ ngoId }: Props) {
         />
       </div>
 
-      {/* ── Fulfillment progress ── */}
-      <div
-        className="p-5 rounded-2xl border"
-        style={{ background: CARD_BG, borderColor: CARD_BDR }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-white font-bold">Overall Fulfillment Rate</p>
-            <p className="text-white/40 text-xs">Percentage of requests that reached volunteer capacity</p>
+      {/* ── Fulfillment Gauge (Radial) + Progress bar ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* RadialBar gauge */}
+        <div className="p-5 rounded-2xl border" style={{ background: CARD_BG, borderColor: CARD_BDR }}>
+          <p className="text-white font-bold mb-1">Fulfillment Rate</p>
+          <p className="text-white/40 text-xs mb-3">Requests that reached volunteer capacity</p>
+          <div className="flex items-center gap-6">
+            <ResponsiveContainer width={160} height={160}>
+              <RadialBarChart
+                cx="50%" cy="50%"
+                innerRadius={45} outerRadius={70}
+                startAngle={90} endAngle={90 - (data.fulfillmentRate / 100) * 360}
+                data={[{ value: data.fulfillmentRate, fill: "oklch(0.55 0.18 160)" }]}
+              >
+                <RadialBar dataKey="value" background={{ fill: "oklch(0.18 0.02 220)" }} cornerRadius={8} />
+              </RadialBarChart>
+            </ResponsiveContainer>
+            <div>
+              <p className="text-5xl font-black text-emerald-400" style={{ fontFamily: "'Outfit', sans-serif" }}>
+                {data.fulfillmentRate}%
+              </p>
+              <p className="text-white/40 text-xs mt-1">
+                {data.totalRequests > 0
+                  ? `${Math.round((data.fulfillmentRate / 100) * data.totalRequests)} of ${data.totalRequests} requests filled`
+                  : "No requests yet"}
+              </p>
+              <p className="text-white/30 text-xs mt-0.5">{data.totalHoursContributed}h total contributed</p>
+            </div>
           </div>
-          <span className="text-3xl font-black text-teal-400" style={{ fontFamily: "'Outfit', sans-serif" }}>
-            {data.fulfillmentRate}%
-          </span>
         </div>
-        <div className="w-full h-3 rounded-full" style={{ background: "oklch(0.18 0.02 220)" }}>
-          <div
-            className="h-full rounded-full transition-all duration-1000"
-            style={{
-              width: `${data.fulfillmentRate}%`,
-              background: "linear-gradient(90deg, oklch(0.48 0.16 195), oklch(0.62 0.18 160))",
-            }}
-          />
-        </div>
-        <div className="flex justify-between mt-1.5 text-xs text-white/30">
-          <span>0%</span>
-          <span>50%</span>
-          <span>100%</span>
+
+        {/* Needs vs Fulfilled grouped bar */}
+        <div className="p-5 rounded-2xl border" style={{ background: CARD_BG, borderColor: CARD_BDR }}>
+          <p className="text-white font-bold mb-1">Needs vs Requests vs Fulfilled</p>
+          <p className="text-white/40 text-xs mb-4">Pipeline overview</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart
+              data={[
+                { name: "Documented", value: data.totalNeeds,    fill: "#34d399" },
+                { name: "Requests",   value: data.totalRequests, fill: "#818cf8" },
+                { name: "Fulfilled",  value: Math.round((data.fulfillmentRate / 100) * data.totalRequests), fill: "#2dd4bf" },
+              ]}
+              barSize={40}
+              margin={{ top: 5, right: 10, left: -15, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: AXIS_COLOR, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: AXIS_COLOR, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Bar dataKey="value" name="Count" radius={[6, 6, 0, 0]}>
+                {["#34d399", "#818cf8", "#2dd4bf"].map((color, i) => (
+                  <Cell key={i} fill={color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
