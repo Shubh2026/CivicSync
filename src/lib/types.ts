@@ -89,3 +89,49 @@ export const CAUSE_OPTIONS = [
   { value: "animals",     label: "Animals",         icon: "🐾" },
   { value: "disaster",    label: "Disaster Relief", icon: "🆘" },
 ];
+
+// ── NGO-specific types ────────────────────────────────────────
+
+export interface CommunityNeed {
+  id: string;
+  ngo_id: string;
+  title: string;
+  description: string;
+  category: string;
+  location: string;
+  city?: string | null;
+  state?: string | null;
+  urgency: "low" | "medium" | "high" | "critical";
+  beneficiaries?: number | null;
+  image_urls: string[];
+  status: "active" | "addressed" | "archived";
+  linked_opportunity_id?: string | null;
+  source: "manual" | "csv";
+  created_at: string;
+}
+
+export interface NGORequest extends Opportunity {
+  assignments?: AssignmentWithVolunteer[];
+}
+
+export interface AssignmentWithVolunteer {
+  id: string;
+  volunteer_id: string;
+  opportunity_id: string;
+  status: "accepted" | "ongoing" | "completed" | "cancelled";
+  hours_contributed: number;
+  accepted_at: string;
+  completed_at?: string | null;
+  volunteer: VolunteerProfile & { email?: string };
+}
+
+export interface AnalyticsData {
+  totalNeeds: number;
+  totalRequests: number;
+  totalVolunteers: number;
+  fulfillmentRate: number;         // %
+  totalHoursContributed: number;
+  engagementTimeline: { month: string; volunteers: number; requests: number }[];
+  categoryBreakdown: { name: string; count: number; color: string }[];
+  requestStatusBreakdown: { name: string; value: number; color: string }[];
+}
