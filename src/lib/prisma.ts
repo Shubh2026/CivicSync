@@ -16,7 +16,10 @@ function createPrismaClient() {
     process.env.DATABASE_URL ||
     "postgresql://localhost:5432/postgres";
 
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({
     adapter,
